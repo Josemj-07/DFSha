@@ -521,7 +521,7 @@ public interface LockManager {
 
 Los nombres de esta sección son los de las rutas REST. Los métodos de los casos de uso se llaman `abrir`, `asignar`, `recuperarBloque`, `confirmar`, `mantenerActivo` y `cerrar`.
 
-- **`open`:** `w` y `a` toman lock exclusivo implícito de todo el archivo. `exclusive=true` con ruta existente da 409. `r` guarda la versión para que el GC no borre sus bloques y devuelve bloques, réplicas vivas ordenadas y `readToken`.
+- **`open`:** `w` y `a` toman lock exclusivo implícito de todo el archivo. `exclusive=true` con ruta existente da 409. `r` guarda la versión para que el GC no borre sus bloques y devuelve bloques, réplicas vivas ordenadas y `readToken`. `a` y `rw` también devuelven bloques y `readToken`, porque el cliente lee para hacer copy-on-write.
 - **`allocate`:** valida handle, cuota y lock. Crea IDs con `gen = 1`, registra `pendingBlocks` y emite `writeToken`.
 - **`recover-block`:** misma posición, mismo `blockId`, `gen + 1`, con `failedNodes` excluidos.
 - **`HandleReaper`:** si un handle no recibe `keepalive` en 30 s, aborta la sesión y libera sus locks.
@@ -531,17 +531,21 @@ Los nombres de esta sección son los de las rutas REST. Los métodos de los caso
 ```
 1. El handle existe y no venció                       -> 410 HANDLE_EXPIRED
 2. Commit repetido del mismo handle y contenido       -> devuelve la versión ya creada
-3. fencingToken es el vigente y cubre los índices     -> 409 STALE_FENCING_TOKEN
+3. fencingToken (lease en w y a, lock en rw) es el vigente
+   y cubre los índices                                -> 409 STALE_FENCING_TOKEN
 4. CAS: cada índice tocado no cambió desde baseVersion -> 409 VERSION_CONFLICT
 5. Mapa final = base + bloques del commit
 6. Los índices 0..n-1 existen sin huecos              -> 422 BLOCK_NOT_DURABLE
 7. Cada bloque nuevo tiene 2 recibos válidos, de nodos distintos,
    de la generación vigente                           -> 422 BLOCK_NOT_DURABLE
-8. La suma de longitudes es igual a size              -> 422 BLOCK_NOT_DURABLE
-9. fileSha256 coincide con el hash de hashes          -> 422 BLOCK_NOT_DURABLE
+8. En w y a, la suma de longitudes es igual a size    -> 422 BLOCK_NOT_DURABLE
+9. En w y a, fileSha256 coincide con el hash de hashes -> 422 BLOCK_NOT_DURABLE
+   En rw el cliente manda fileSha256 nulo: el servidor calcula size y hash
+   del mapa final, porque otro escritor pudo cambiar otros rangos
 10. La cuota alcanza                                  -> 507 QUOTA_EXCEEDED
 11. Una sola entrada CommitVersion en el WAL: nueva versión, refCount
-    de bloques nuevos +1, reemplazados -1, pendingBlocks limpios
+    de bloques nuevos +1, reemplazados -1, pendingBlocks limpios.
+    La baseVersion del handle avanza: un handle publica una vez por flush
 12. Responde {version}
 ```
 

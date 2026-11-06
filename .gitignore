@@ -1,0 +1,8 @@
+.env
+**/build/
+**/.gradle/
+*.key
+*.crt
+*.csr
+*.srl
+pki-out/

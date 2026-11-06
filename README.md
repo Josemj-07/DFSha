@@ -217,7 +217,36 @@ POST /v1/files:open
                {"nodeId":"dn-2","addr":"10.0.2.37:50051","az":"us-east-1b"}]}]}
 ```
 
-`:commit` admite solo los bloques modificados. El mapa final es el de `baseVersion` con esos bloques superpuestos. En modo `w` la base es un mapa vacío.
+Cuerpos de las demás rutas. El cliente ya los usa así: **el servidor debe respetar estos nombres de campo**.
+
+| Ruta | Petición | Respuesta |
+|---|---|---|
+| `/auth/login` | `{"username","password"}` | `{"accessToken","refreshToken","expiresIn"}`, con `expiresIn` en segundos |
+| `/auth/refresh` | `{"refreshToken"}` | Igual que login |
+| `/auth/logout` | `{"refreshToken"}` | `204` |
+| `/fs/ls` | | `{"entries":[<atributos>],"nextCursor"}`, con `nextCursor` nulo en la última página |
+| `/fs/stat` | | `{"name","path","type","owner","mode","size","version","mtime"}`, con `type` `FILE` o `DIR`, `mode` como `rwxr-x---` y `mtime` en ISO-8601 |
+| `/fs/mkdir` | `{"path","parents"}` | `204` |
+| `/fs/move`, `/fs/copy` | `{"from","to"}` | `204` |
+| `:allocate` | `{"firstIdx","count"}`, con índices consecutivos | Como en el ejemplo |
+| `:recover-block` | `{"idx","failedNodes":[]}` | Igual que `:allocate`, con un solo bloque |
+| `:keepalive` | | `{"ttlMs","readToken"}`, con `readToken` nulo en modo `w` |
+| `:close` | | `204` |
+| `/locks` | `{"path","mode","range":{"first","last"},"ttlMs","waitMs"}`, con `mode` `SHARED` o `EXCLUSIVE` y `range` nulo para todo el archivo | `{"lockId","fencingToken","expiresAt"}` |
+| `/locks/{id}:renew` | | `204` |
+| `/reports/replica` | `{"blockId","gen","node","reason"}`, con `reason` `UNREACHABLE` o `CORRUPT` | `204` |
+| `/admin/users` | `{"username","password","role"}`, con `role` `USER` o `ADMIN` | `204` |
+| `/admin/users/{u}/quota` | `{"quotaBytes"}` | `204` |
+| `/admin/nodes` | | `[{"nodeId","addr","az","status","capacityBytes","usedBytes"}]` |
+| `/admin/audit` | | `[{"time","user","action","ip","result","traceId"}]` |
+
+Reglas de `:open` y `:commit`:
+
+- En modo `a` y `rw`, `:open` devuelve `blocks` y `readToken` como en lectura, porque el cliente necesita leer para el copy-on-write. Solo `w` devuelve `blocks` vacío.
+- `:commit` admite solo los bloques modificados. El mapa final es el vigente con esos bloques superpuestos. En modo `w` la base es un mapa vacío.
+- Un handle puede publicar varias veces, una por cada `flush`. Tras cada commit, la `baseVersion` del handle avanza a la versión creada.
+- `fencingToken` es el del lease en `w` y `a`, y el del lock en `rw`.
+- En `rw` el cliente envía `fileSha256` nulo y el servidor calcula el hash y el tamaño del mapa final. Con escritores en rangos disjuntos, ningún cliente conoce el resultado: si lo calculara, el servidor rechazaría commits legítimos.
 
 ### 4.3 AMQP
 
@@ -250,6 +279,8 @@ El exchange `dfs.commands` (direct) entrega a `dn.<id>.commands` con routing key
 | Block token | JWT EdDSA, clave `blocktoken.key`, 10 min | `sub`, `aud=dfsha-datanode`, `ops=r\|w`, `blk=["<blockId>:<gen>"]`, `exp` |
 | Recibo de bloque | SHA256withECDSA con la clave TLS del nodo | Firma de `dfsha-receipt-v1\|<blockId>\|<gen>\|<length>\|<sha256>\|<nodeId>` en UTF-8 |
 | `fileSha256` | SHA-256 | Sobre la concatenación de los 32 bytes de cada SHA-256 de bloque, en orden de `idx` |
+
+Vector de prueba de `fileSha256`, para que cliente y servidor coincidan: dos bloques con el contenido `hola` y `mundo` dan `c030ed83e4b337813e905c456a45c002790bc315b88ec9d47962b8563d502803`. Un archivo vacío da `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 
 ## 5. Seguridad
 
@@ -497,6 +528,8 @@ docker compose down        # agrega -v para borrar datos y secretos
 
 Las imágenes son las mismas: nada del entorno va dentro de ellas. Cada contenedor corre en su VM con `docker run`, y solo cambian las variables `DFS_*`, los volúmenes y los certificados, que se emiten con la IP privada real en el SAN.
 
+El despliegue del cliente está en [client/PRODUCCION.md](client/PRODUCCION.md).
+
 ## 9. Fallas esperadas
 
 | Falla | Detección | Efecto y recuperación |
@@ -554,6 +587,8 @@ Estas versiones se compilaron y probaron juntas el 2026-11-06 con un prototipo d
 | Picocli | 4.7.7 |
 | Jackson (solo cliente) | 2.20.1 |
 | JLine | 3.30.6 |
+| JUnit (solo pruebas) | 5.13.4 |
+| BouncyCastle `bcpkix-jdk18on` (solo pruebas) | 1.86 |
 | RabbitMQ | `rabbitmq:4.3-alpine` |
 
 ## 13. Reglas de construcción

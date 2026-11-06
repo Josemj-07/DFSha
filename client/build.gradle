@@ -1,0 +1,88 @@
+plugins {
+	id 'application'
+	id 'com.google.protobuf' version '0.10.1'
+}
+
+group = 'co.edu.upb.dfsha'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+ext {
+	grpcVersion = '1.85.1'
+	protobufVersion = '4.36.2'
+}
+
+sourceSets {
+	main {
+		proto {
+			srcDir '../proto'
+		}
+	}
+}
+
+protobuf {
+	protoc { artifact = "com.google.protobuf:protoc:${protobufVersion}" }
+	plugins { grpc { artifact = "io.grpc:protoc-gen-grpc-java:${grpcVersion}" } }
+	generateProtoTasks { all()*.plugins { grpc {} } }
+}
+
+dependencies {
+	implementation platform("io.grpc:grpc-bom:${grpcVersion}")
+	implementation 'io.grpc:grpc-netty-shaded'
+	implementation 'io.grpc:grpc-protobuf'
+	implementation 'io.grpc:grpc-stub'
+	implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+	compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
+
+	implementation 'info.picocli:picocli:4.7.7'
+	annotationProcessor 'info.picocli:picocli-codegen:4.7.7'
+	implementation 'org.jline:jline:3.30.6'
+	implementation 'com.fasterxml.jackson.core:jackson-databind:2.20.1'
+
+	testImplementation 'org.junit.jupiter:junit-jupiter:5.13.4'
+	testImplementation 'io.grpc:grpc-inprocess'
+	testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.86'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+application {
+	mainClass = 'co.edu.upb.dfsha.client.Main'
+	applicationName = 'dfs'
+	applicationDefaultJvmArgs = ['-Xmx512m']
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.compilerArgs += ["-Aproject=${project.group}/${project.name}"]
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+// Servidor y nodos simulados para probar la CLI mientras no existan los reales.
+tasks.register('simulador', JavaExec) {
+	group = 'verification'
+	description = 'Levanta un servidor y tres nodos simulados con TLS real'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'co.edu.upb.dfsha.client.simulator.SimulatorMain'
+	args = [layout.buildDirectory.dir('simulador').get().asFile.path]
+	if (project.hasProperty('bloque')) {
+		systemProperty 'dfs.simulador.bloque', project.property('bloque')
+	}
+}
+
+tasks.register('printTestClasspath') {
+	description = 'Imprime el classpath de pruebas, para lanzar el simulador sin Gradle'
+	doLast {
+		println sourceSets.test.runtimeClasspath.asPath
+	}
+}

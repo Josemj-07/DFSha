@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package dfsha.v1;
+
+option java_multiple_files = true;
+option java_package = "co.edu.upb.dfsha.proto.v1";
+
+// Puerto 50051. Lo usa el cliente.
+service BlockService {
+  rpc EscribirBloque(stream WriteRequest) returns (WriteResponse);
+  rpc LeerBloque(ReadRequest) returns (stream Chunk);
+}
+
+// Puerto 50052. Solo entre DataNodes: cadena de escritura y re-replicación.
+service ReplicationService {
+  rpc ReplicarBloque(stream WriteRequest) returns (WriteResponse);
+}
+
+// Orden del stream: un header, N chunks, un trailer.
+message WriteRequest {
+  oneof payload {
+    WriteHeader header = 1;
+    Chunk chunk = 2;
+    WriteTrailer trailer = 3;
+  }
+}
+
+message WriteHeader {
+  string block_id = 1;
+  int64 gen = 2;
+  int64 length = 3;
+  repeated Downstream downstream = 4; // Nodos restantes de la cadena; vacío en el último.
+}
+
+message Downstream {
+  string node_id = 1;
+  string addr = 2; // host:50052
+}
+
+message Chunk {
+  int64 offset = 1;  // Offset dentro del bloque.
+  bytes data = 2;    // Máximo 1 MiB.
+  fixed32 crc32c = 3;
+}
+
+message WriteTrailer {
+  string sha256 = 1; // Hexadecimal, del bloque completo.
+}
+
+message Receipt {
+  string node_id = 1;
+  string block_id = 2;
+  int64 gen = 3;
+  int64 length = 4;
+  string sha256 = 5;
+  bytes signature = 6;
+}
+
+message WriteResponse {
+  repeated Receipt receipts = 1; // Un recibo por nodo de la cadena.
+}
+
+message ReadRequest {
+  string block_id = 1;
+  int64 gen = 2;
+  int64 offset = 3;
+  int64 length = 4; // 0 significa hasta el final del bloque.
+}

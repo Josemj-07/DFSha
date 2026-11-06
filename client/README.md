@@ -1,6 +1,8 @@
 # Cliente DFSha
 
-Documento de construcción del SDK y la CLI `dfs`, para personas y agentes de IA. Lee primero el [README raíz](../README.md): ahí están los contratos, los cambios frente al PDF y las [reglas de construcción](../README.md#13-reglas-de-construcción). El `build.gradle`, el código TLS y el Dockerfile de este documento fueron validados: úsalos tal cual.
+Documento de construcción del SDK y la CLI `dfs`, para personas y agentes de IA. Lee primero el [README raíz](../README.md): ahí están los contratos, los cambios frente al PDF y las [reglas de construcción](../README.md#13-reglas-de-construcción).
+
+**Estado:** el cliente está implementado y probado contra un simulador. Todavía no se ha probado contra el servidor y los nodos reales, porque no existen. Para desplegarlo, sigue [PRODUCCION.md](PRODUCCION.md).
 
 ## 1. Qué te corresponde
 
@@ -27,97 +29,27 @@ El cliente solo conoce la URL del servidor y `ca.crt`. Las direcciones de los no
 10. `DfsFile`, `BlockBuffer`.
 11. `dfs shell`, descriptores, `lock`, `unlock`.
 
-## 2. Crear el proyecto
+## 2. Compilar, probar y ejecutar
 
-El cliente **no usa Spring**: una CLI debe arrancar rápido. Initializr se usa solo para obtener el wrapper de Gradle.
+El cliente **no usa Spring**: una CLI debe arrancar rápido.
 
 ```bash
-curl -sS https://start.spring.io/starter.tgz \
-  -d type=gradle-project -d language=java -d bootVersion=4.1.2 -d javaVersion=21 \
-  -d baseDir=client | tar -xzf -
-cd client && rm -rf src HELP.md
-mkdir -p src/main/java/co/edu/upb/dfsha/client src/test/java/co/edu/upb/dfsha/client
+./gradlew build          # compila y corre las pruebas
+./gradlew installDist    # deja el ejecutable en build/install/dfs/bin/dfs
 ```
 
-Reemplaza `settings.gradle`:
+### Simulador
 
-```groovy
-rootProject.name = 'client'
+Mientras no existan el servidor y los nodos reales, el código de pruebas incluye un simulador con HTTPS y gRPC reales, TLS 1.3, una CA propia y recibos firmados. Su `commit` sigue el orden de [server/README.md](../server/README.md).
+
+```bash
+./gradlew simulador                  # bloques de 128 MiB
+./gradlew simulador -Pbloque=4194304 # bloques de 4 MiB
 ```
 
-Reemplaza `build.gradle`:
+Imprime las variables que debes exportar, y el usuario `admin` con contraseña `admin-simulador`. Sirve también como referencia del contrato: `SimWriteSession` muestra el orden de escritura de un nodo, con control de flujo.
 
-```groovy
-plugins {
-	id 'application'
-	id 'com.google.protobuf' version '0.10.1'
-}
-
-group = 'co.edu.upb.dfsha'
-version = '0.0.1-SNAPSHOT'
-
-java {
-	toolchain {
-		languageVersion = JavaLanguageVersion.of(21)
-	}
-}
-
-repositories {
-	mavenCentral()
-}
-
-ext {
-	grpcVersion = '1.85.1'
-	protobufVersion = '4.36.2'
-}
-
-sourceSets {
-	main {
-		proto {
-			srcDir '../proto'
-		}
-	}
-}
-
-protobuf {
-	protoc { artifact = "com.google.protobuf:protoc:${protobufVersion}" }
-	plugins { grpc { artifact = "io.grpc:protoc-gen-grpc-java:${grpcVersion}" } }
-	generateProtoTasks { all()*.plugins { grpc {} } }
-}
-
-dependencies {
-	implementation platform("io.grpc:grpc-bom:${grpcVersion}")
-	implementation 'io.grpc:grpc-netty-shaded'
-	implementation 'io.grpc:grpc-protobuf'
-	implementation 'io.grpc:grpc-stub'
-	implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
-	compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
-
-	implementation 'info.picocli:picocli:4.7.7'
-	annotationProcessor 'info.picocli:picocli-codegen:4.7.7'
-	implementation 'org.jline:jline:3.30.6'
-	implementation 'com.fasterxml.jackson.core:jackson-databind:2.20.1'
-
-	testImplementation 'org.junit.jupiter:junit-jupiter:5.13.4'
-	testImplementation 'io.grpc:grpc-inprocess'
-	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-}
-
-application {
-	mainClass = 'co.edu.upb.dfsha.client.Main'
-	applicationName = 'dfs'
-}
-
-tasks.withType(JavaCompile).configureEach {
-	options.compilerArgs += ["-Aproject=${project.group}/${project.name}"]
-}
-
-tasks.named('test') {
-	useJUnitPlatform()
-}
-```
-
-`./gradlew installDist` genera el ejecutable en `build/install/dfs/bin/dfs`.
+Un simulador escrito por el mismo equipo no reemplaza la integración: prueba que el cliente cumple el contrato **tal como lo entendimos**.
 
 ## 3. Estructura
 
@@ -126,22 +58,32 @@ La CLI solo interpreta argumentos e imprime. Toda la lógica vive en el SDK, que
 ```
 client/
 ├── Dockerfile
+├── PRODUCCION.md
 ├── build.gradle
 └── src/main/java/co/edu/upb/dfsha/client/
     ├── Main.java
     ├── cli/
     │   ├── DfsCommand.java       Comando raíz de Picocli
-    │   ├── ShellCommand.java     Bucle interactivo con JLine
-    │   ├── commands/             Una clase por comando
+    │   ├── CommandCatalog.java   Arma los árboles de comandos
+    │   ├── CommandFactory.java   Inyección por constructor
+    │   ├── ClientContext.java    Opciones, flujos y cliente perezoso
+    │   ├── ErrorHandler.java     Punto único de errores
     │   ├── ExitCodes.java
-    │   └── OutputFormatter.java
+    │   ├── OutputFormatter.java
+    │   ├── commands/             Una clase por comando
+    │   ├── admin/                Comandos de administración
+    │   └── shell/                ShellCommand, DescriptorTable, open, read, write, flush, close, lock, unlock
     ├── sdk/                      API pública
     │   ├── DfsClient.java        Fachada
-    │   ├── DfsFile.java          open, read, write, flush, close
-    │   └── model/                FileInfo, OpenMode, LockMode, LockHandle
-    ├── metadata/                 MetadataGateway y RestMetadataGateway, DTO
-    ├── data/                     BlockGateway y GrpcBlockGateway, ChannelPool
-    ├── transfer/                 Uploader, Downloader, BlockBuffer, RetryPolicy
+    │   ├── DfsClientFactory.java Raíz de composición
+    │   ├── DfsFile.java          leer, escribir, volcar, bloquear, close
+    │   ├── RemoteFile.java       Implementación de DfsFile
+    │   ├── BlockLocator.java     Mapa de bloques y reubicación
+    │   ├── model/                Vocabulario común: FileInfo, OpenMode, LockHandle...
+    │   └── error/                DfsException y sus subclases
+    ├── metadata/                 Puertos REST, RestInvoker, RetryPolicy, ProblemMapper, DTO
+    ├── data/                     BlockGateway, GrpcBlockGateway, ChannelPool, IdleWatchdog
+    ├── transfer/                 Uploader, Downloader, BlockPublisher, BlockFetcher, BlockBuffer
     ├── integrity/                Checksums, FileHash
     ├── session/                  SessionStore, TokenManager, LeaseKeeper, LocationCache
     ├── security/                 TlsFactory
@@ -154,7 +96,9 @@ client/
 |---|---|
 | 1 | Opciones `--server` y `--ca-cert` |
 | 2 | Variables `DFS_SERVER_URL` y `DFS_CA_CERT` |
-| 3 | `~/.dfs/config.properties` |
+| 3 | `~/.dfs/config.properties`, con las claves `server.url` y `ca.cert` |
+
+`DFS_HOME` cambia el directorio local, que por defecto es `~/.dfs`.
 
 ### Capas
 
@@ -171,35 +115,22 @@ Las dependencias van de izquierda a derecha, nunca al revés.
 | `transfer` | Algoritmos de carga, descarga, buffers y reintentos. Depende de interfaces |
 | `metadata`, `data` | Adaptadores REST y gRPC |
 
+`sdk.model` y `sdk.error` son vocabulario común sin dependencias, así que cualquier capa los puede usar.
+
 ### Interfaces
 
+Un puerto por responsabilidad, para que `transfer` no vea métodos de autenticación:
+
 ```java
-public interface MetadataGateway {
-    LoginResult iniciarSesion(String username, char[] password);
-    LoginResult renovarSesion(String refreshToken);
-    void cerrarSesion(String refreshToken);
-    DirectoryPage listar(String path, String cursor);
-    FileInfo obtenerAtributos(String path);
-    void crearDirectorio(String path, boolean parents);
-    void borrarDirectorio(String path, boolean recursive);
-    void borrar(String path);
-    void mover(String from, String to);
-    void copiar(String from, String to);
-    OpenResult abrir(OpenRequest request);
-    Allocation asignar(String handle, int firstIdx, int count);
-    Allocation recuperarBloque(String handle, int idx, List<String> failedNodes);
-    long confirmar(String handle, CommitRequest request);
-    KeepaliveResult mantenerActivo(String handle);
-    void cerrar(String handle);
-    LockHandle bloquear(LockRequest request);
-    void renovarBloqueo(String lockId);
-    void desbloquear(String lockId);
-    void reportarReplica(ReplicaReport report);
-}
+public interface AuthGateway { iniciarSesion, renovarSesion, cerrarSesion }
+public interface NamespaceGateway { listar, obtenerAtributos, crearDirectorio, borrarDirectorio, borrar, mover, copiar }
+public interface FileSessionGateway { abrir, asignar, recuperarBloque, confirmar, mantenerActivo, cerrar, reportarReplica }
+public interface LockGateway { bloquear, renovarBloqueo, desbloquear }
+public interface AdminGateway { crearUsuario, asignarCuota, listarNodos, listarAuditoria }
 
 public interface BlockGateway {
     CompletableFuture<List<Receipt>> escribir(BlockTarget target, BlockSource source, String token);
-    void leer(ReplicaRef replica, BlockRange range, String token, ChunkConsumer consumer);
+    void leer(ReplicaRef replica, String blockId, long gen, ByteRange range, String token, ChunkConsumer consumer);
 }
 
 public interface DfsFile extends AutoCloseable {
@@ -207,12 +138,13 @@ public interface DfsFile extends AutoCloseable {
     void escribir(long offset, ByteBuffer source);
     long volcar();                // Devuelve la versión confirmada.
     LockHandle bloquear(LockMode mode, BlockRange range, Duration ttl, Duration wait);
+    void desbloquear(String lockId);
     long obtenerTamanio();
+    String obtenerRuta();
+    boolean tieneCambiosPendientes();
     @Override void close();
 }
 ```
-
-Divide `MetadataGateway` si crece, por ejemplo en `NamespaceGateway`, `FileSessionGateway` y `LockGateway`: `transfer` no debe ver métodos de autenticación.
 
 ## 4. Comandos
 
@@ -227,6 +159,9 @@ Divide `MetadataGateway` si crece, por ejemplo en `NamespaceGateway`, `FileSessi
 | `dfs get <remoto> <local>` | Descarga un archivo | REST + `LeerBloque` |
 | `dfs cat`, `dfs head`, `dfs tail` | Utilidades sobre `leer()` | REST + `LeerBloque` |
 | `dfs shell` | Abre la sesión interactiva | |
+| `dfs admin crear-usuario <usuario> [--admin]` | Crea un usuario; pide su contraseña por consola | `/admin/users` |
+| `dfs admin cuota <usuario> <bytes>` | Asigna la cuota | `/admin/users/{u}/quota` |
+| `dfs admin nodos`, `dfs admin auditoria` | Estado de los nodos y registro de auditoría | `/admin/nodes`, `/admin/audit` |
 
 Solo dentro de `dfs shell`:
 
@@ -243,16 +178,9 @@ Códigos de salida: `0` éxito, `1` error general, `2` uso incorrecto, `3` auten
 
 ### Implementación
 
-```java
-@Command(name = "dfs", mixinStandardHelpOptions = true, version = "dfs 0.1",
-         subcommands = {LoginCommand.class, LogoutCommand.class, LsCommand.class, ...})
-public final class DfsCommand { ... }
-```
-
 - Una clase por comando en `cli/commands/`, implementando `Callable<Integer>`.
 - Un `IFactory` propio inyecta `DfsClient` por constructor, sin singletons estáticos.
 - Un `IExecutionExceptionHandler` único traduce `DfsException` a mensaje y código de salida. Mensajes en español, cortos, en `stderr`, sin stack trace salvo con `--verbose`.
-- `Main` ejecuta `System.exit(new CommandLine(new DfsCommand(), factory).setExecutionExceptionHandler(handler).execute(args))`.
 - `PathResolver` convierte rutas relativas con `cwd` y resuelve `.` y `..`. `cd` valida con `stat` que sea directorio y guarda `cwd`.
 - `OutputFormatter`: `ls -l` con permisos, dueño, tamaño, versión, fecha y nombre.
 - El progreso va a `stderr`, nunca a `stdout`, para que `dfs cat archivo > salida` funcione.
@@ -286,7 +214,7 @@ while (true) {
 
 ## 5. Seguridad
 
-`TlsFactory` crea un `SSLContext` y un `ChannelCredentials` a partir de `ca.crt`. Si el archivo no existe, falla con un mensaje claro. Confía **solo** en la CA del proyecto, no en las del sistema:
+`TlsFactory` crea un `SSLContext` y un `ChannelCredentials` a partir de `ca.crt`. Si el archivo no existe, falla con un mensaje claro. Confía **solo** en la CA del proyecto, no en las del sistema, y solo acepta TLS 1.3 aunque el otro extremo ofrezca una versión anterior:
 
 ```java
 KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
@@ -300,15 +228,19 @@ trustManagers.init(trustStore);
 SSLContext sslContext = SSLContext.getInstance("TLSv1.3");
 sslContext.init(null, trustManagers.getTrustManagers(), null);
 
-HttpClient http = HttpClient.newBuilder().sslContext(sslContext).build();
+SSLParameters parameters = new SSLParameters();
+parameters.setProtocols(new String[] {"TLSv1.3"});
+HttpClient http = HttpClient.newBuilder().sslContext(sslContext).sslParameters(parameters).build();
 ```
 
 gRPC con la misma CA:
 
 ```java
-ChannelCredentials credentials = TlsChannelCredentials.newBuilder()
+SslContext context = GrpcSslContexts.forClient()
         .trustManager(caPath.toFile())
+        .protocols("TLSv1.3")
         .build();
+ChannelCredentials credentials = NettySslContextChannelCredentials.create(context);
 ManagedChannel channel = Grpc.newChannelBuilderForAddress(host, port, credentials).build();
 ```
 
@@ -334,18 +266,13 @@ Escribe en un temporal con los mismos permisos y renombra con `ATOMIC_MOVE`, par
 
 `TokenManager` entrega el access token y lo renueva si faltan menos de 30 s. Ante un `401`, hace un solo refresh y reintenta. Si falla, lanza `NotAuthenticatedException` y la CLI dice `Sesión vencida, ejecuta dfs login`. Sincroniza el refresh para que los hilos paralelos no roten el token dos veces.
 
-La contraseña se pide por consola, nunca en argumentos, logs ni historial. Límpiala con `Arrays.fill` tras usarla. Sin consola, léela de stdin.
-
-```java
-@Option(names = {"-p", "--password"}, interactive = true, arity = "0..1", description = "Contraseña")
-char[] password;
-```
+La contraseña se pide por consola, nunca en argumentos, logs ni historial. `PasswordReader` usa `Console.readPassword` y, sin consola, una línea de stdin. Se limpia con `Arrays.fill` tras usarla. **No existe una opción `-p`:** con `arity = "0..1"`, Picocli aceptaría `-p secreto` y la contraseña quedaría en el historial y en `ps`.
 
 ## 6. Implementación
 
 ### `metadata`
 
-`RestMetadataGateway` usa `java.net.http.HttpClient` y Jackson 2. Una clase interna centraliza el encabezado `Authorization`, JSON, tiempo límite de 10 s, `traceId` y traducción de errores. `path` y `cursor` en query se codifican con `URLEncoder`.
+Los gateways REST usan `java.net.http.HttpClient` y Jackson 2. `RestInvoker` centraliza el encabezado `Authorization`, JSON, tiempo límite de 10 s, reintentos y traducción de errores. `path` y `cursor` en query se codifican con `URLEncoder`. `POST /locks` suma `waitMs` al tiempo límite, porque el servidor retiene la petición en su cola.
 
 `ProblemMapper` traduce `application/problem+json` por su campo `code`:
 
@@ -359,12 +286,13 @@ public sealed abstract class DfsException extends RuntimeException
 
 | Respuesta | Reacción |
 |---|---|
-| `503 SAFE_MODE`, servidor inalcanzable | `RetryPolicy`: espera 1, 2, 4 y 8 s, hasta unos 30 s, solo en operaciones idempotentes |
+| `503 SAFE_MODE` | `RetryPolicy`: espera 1, 2, 4, 8, 8 y 8 s. Siempre se reintenta, porque el servidor no aplicó nada |
+| Servidor inalcanzable | Las mismas esperas, solo en operaciones idempotentes |
 | `:commit` con servidor caído | Reintenta el mismo commit: es idempotente por handle |
 | `mkdir`, `POST /fs/move` tras fallo ambiguo | No reintenta a ciegas |
 | `409 VERSION_CONFLICT` | No reintenta: informa al usuario para que relea |
 | `409 STALE_FENCING_TOKEN`, `410 HANDLE_EXPIRED` | Aborta |
-| `422 BLOCK_NOT_DURABLE` | Reenvía los bloques indicados o aborta |
+| `422 BLOCK_NOT_DURABLE` | Aborta: el archivo conserva su versión anterior |
 
 ### `data`
 
@@ -408,7 +336,7 @@ private static final Metadata.Key<String> FAILED_NODES =
 Metadata trailers = Status.trailersFromThrowable(error);
 ```
 
-En lectura, comprueba `offset` y CRC32C de cada `Chunk` antes de entregarlo; uno incorrecto lanza `CorruptReplicaException`. Un `ScheduledExecutorService` cancela la llamada si pasan 5 s sin chunk. No uses un deadline total: cortaría transferencias sanas.
+En lectura, comprueba `offset` y CRC32C de cada `Chunk` antes de entregarlo; uno incorrecto lanza `CorruptReplicaException`. `IdleWatchdog` cancela la llamada si pasan 5 s sin avance, en lectura y escritura. Tras enviar el último fragmento de una escritura la espera sube a 30 s, porque el nodo debe hacer `fsync` y esperar a la cadena. No uses un deadline total: cortaría transferencias sanas.
 
 ### `integrity`
 
@@ -423,7 +351,7 @@ public final class FileHash {
 }
 ```
 
-`FileHash` se calcula sobre los **32 bytes crudos** de cada hash, no sobre su texto hexadecimal, y debe coincidir exactamente con el del servidor. Agrega un vector de prueba y compártelo con quien construye el servidor. `crc32c` en el proto es `fixed32`: usa `(int) crc.getValue()`.
+`FileHash` se calcula sobre los **32 bytes crudos** de cada hash, no sobre su texto hexadecimal, y debe coincidir exactamente con el del servidor. El vector de prueba está en el [README raíz](../README.md#44-tokens-y-recibos). `crc32c` en el proto es `fixed32`: usa `(int) crc.getValue()`.
 
 ### `put`: `Uploader`
 
@@ -459,17 +387,17 @@ void descargar(String remote, Path local);
 
 | Aspecto | Comportamiento |
 |---|---|
-| `escribir()` | Va al buffer local. **Retornar no implica durabilidad** |
+| `escribir()` | Va al buffer local. **Retornar no implica durabilidad**. Más allá del final falla: no se admiten huecos |
 | Bloque tocado parcialmente | Primero se descarga completo, se verifica, se modifica y se sube como bloque nuevo (COW) |
 | `leer()` | Usa el buffer si el bloque está sucio. Una lectura parcial verifica CRC32C pero no SHA-256, porque no tiene el bloque completo |
 | `volcar()` | Asigna bloques para los índices sucios, los sube, hace commit solo de esos y actualiza `baseVersion`. Sin cambios, no hace nada |
-| `close()` | `volcar()`, `:close` y borra el directorio temporal, también ante error |
-| Modo `w`, `a`, `r` | `w` empieza vacío; `a` reescribe el último bloque parcial; `r` rechaza `escribir` |
+| `close()` | `volcar()`, libera sus locks, `:close` y borra el directorio temporal, también ante error |
+| Modo `w`, `a`, `r` | `w` empieza vacío y publica aunque no se escriba, para dejar el archivo vacío; `a` reescribe el último bloque parcial e ignora el offset; `r` rechaza `escribir` |
 | Modo `rw` | Exige un lock que cubra el rango: compruébalo antes del commit y da un error claro |
 | `VERSION_CONFLICT` en `volcar` | No reintentes ni fusiones: conserva el buffer y lanza la excepción |
 | No soportado | `truncate` arbitrario, `mmap`, enlaces, compartir entre usuarios |
 
-El SHA-256 de cada bloque se calcula sobre el buffer, y `fileSha256` combina esos hashes con los de los bloques no modificados que devolvió `abrir`.
+El SHA-256 de cada bloque se calcula sobre el buffer. En `w` y `a`, `fileSha256` combina esos hashes con los de los bloques no modificados que devolvió `abrir`. En `rw` se envía nulo: con otros escritores, solo el servidor conoce el mapa final.
 
 ## 7. Dockerfile
 
@@ -490,7 +418,13 @@ WORKDIR /home/dfs
 ENTRYPOINT ["dfs"]
 ```
 
-Uso con Compose:
+Construye desde la raíz del repositorio, porque necesita `proto/`:
+
+```bash
+docker build -f client/Dockerfile -t dfsha/client:0.1 .
+```
+
+Uso con Compose, cuando exista `docker-compose.yml`:
 
 ```bash
 docker compose --profile cli run --rm client login admin
@@ -499,7 +433,7 @@ docker compose --profile cli run --rm client shell
 
 ## 8. Pruebas y lista de entrega
 
-Tests obligatorios. Para hilos usa `CountDownLatch` en lugar de `sleep`, y un `blockSize` pequeño, por ejemplo 4 MiB.
+`./gradlew test` cubre estos casos. Para hilos usa `CountDownLatch` en lugar de `sleep`, y un `blockSize` pequeño, por ejemplo 4 MiB.
 
 | Área | Casos |
 |---|---|
@@ -512,7 +446,7 @@ Tests obligatorios. Para hilos usa `CountDownLatch` en lugar de `sleep`, y un `b
 | Seguridad | Certificado de otra CA rechazado; nombre incorrecto rechazado; `session.json` en `600` |
 | CLI | Códigos de salida; la contraseña nunca se imprime; `stdout` limpio en `cat` |
 
-Comprobación sobre el sistema en marcha:
+Comprobación sobre el sistema real en marcha, pendiente hasta que existan el servidor y los nodos. Hoy pasan contra el simulador:
 
 - [ ] `put` y `get` de un archivo de varios bloques producen el mismo hash.
 - [ ] `get` termina bien si cae un nodo a mitad de descarga.
