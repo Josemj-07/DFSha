@@ -1,0 +1,35 @@
+{
+  "users": [
+    {"name":"mds","password":"__MDS_PASS__","tags":[]},
+    {"name":"dn-1","password":"__DN1_PASS__","tags":[]},
+    {"name":"dn-2","password":"__DN2_PASS__","tags":[]},
+    {"name":"dn-3","password":"__DN3_PASS__","tags":[]}
+  ],
+  "vhosts": [{"name":"dfsha"}],
+  "permissions": [
+    {"user":"mds","vhost":"dfsha","configure":"^$","write":"^dfs\\.commands$","read":"^mds\\..*$"},
+    {"user":"dn-1","vhost":"dfsha","configure":"^$","write":"^dfs\\.events$","read":"^dn\\.dn-1\\.commands$"},
+    {"user":"dn-2","vhost":"dfsha","configure":"^$","write":"^dfs\\.events$","read":"^dn\\.dn-2\\.commands$"},
+    {"user":"dn-3","vhost":"dfsha","configure":"^$","write":"^dfs\\.events$","read":"^dn\\.dn-3\\.commands$"}
+  ],
+  "exchanges": [
+    {"name":"dfs.events","vhost":"dfsha","type":"topic","durable":true,"auto_delete":false,"internal":false,"arguments":{}},
+    {"name":"dfs.commands","vhost":"dfsha","type":"direct","durable":true,"auto_delete":false,"internal":false,"arguments":{}}
+  ],
+  "queues": [
+    {"name":"mds.heartbeats","vhost":"dfsha","durable":true,"auto_delete":false,"arguments":{"x-message-ttl":5000,"x-max-length":1000,"x-overflow":"drop-head"}},
+    {"name":"mds.events","vhost":"dfsha","durable":true,"auto_delete":false,"arguments":{}},
+    {"name":"dn.dn-1.commands","vhost":"dfsha","durable":true,"auto_delete":false,"arguments":{}},
+    {"name":"dn.dn-2.commands","vhost":"dfsha","durable":true,"auto_delete":false,"arguments":{}},
+    {"name":"dn.dn-3.commands","vhost":"dfsha","durable":true,"auto_delete":false,"arguments":{}}
+  ],
+  "bindings": [
+    {"source":"dfs.events","vhost":"dfsha","destination":"mds.heartbeats","destination_type":"queue","routing_key":"node.heartbeat.*","arguments":{}},
+    {"source":"dfs.events","vhost":"dfsha","destination":"mds.events","destination_type":"queue","routing_key":"node.register.*","arguments":{}},
+    {"source":"dfs.events","vhost":"dfsha","destination":"mds.events","destination_type":"queue","routing_key":"node.report.*","arguments":{}},
+    {"source":"dfs.events","vhost":"dfsha","destination":"mds.events","destination_type":"queue","routing_key":"block.*.*","arguments":{}},
+    {"source":"dfs.commands","vhost":"dfsha","destination":"dn.dn-1.commands","destination_type":"queue","routing_key":"dn-1","arguments":{}},
+    {"source":"dfs.commands","vhost":"dfsha","destination":"dn.dn-2.commands","destination_type":"queue","routing_key":"dn-2","arguments":{}},
+    {"source":"dfs.commands","vhost":"dfsha","destination":"dn.dn-3.commands","destination_type":"queue","routing_key":"dn-3","arguments":{}}
+  ]
+}
