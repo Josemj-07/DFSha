@@ -28,9 +28,9 @@ import java.util.Date;
 import java.util.concurrent.atomic.AtomicLong;
 
 /** CA de prueba con el mismo perfil que server/pki (EC P-256), igual que SimPki del cliente. */
-final class TestPki {
+public final class TestPki {
 
-    record Identity(Path certFile, Path keyFile) {
+    public record Identity(Path certFile, Path keyFile) {
     }
 
     private static final AtomicLong SERIAL = new AtomicLong(System.currentTimeMillis());
@@ -39,7 +39,7 @@ final class TestPki {
     private final KeyPair caKeys;
     private final X509Certificate caCert;
 
-    TestPki(Path dir, String nombreCa) {
+    public TestPki(Path dir, String nombreCa) {
         try {
             this.dir = dir;
             Files.createDirectories(dir);
@@ -51,11 +51,11 @@ final class TestPki {
         }
     }
 
-    Path obtenerCaCert() {
+    public Path obtenerCaCert() {
         return dir.resolve("ca.crt");
     }
 
-    Identity emitir(String nombre, String... dnsNames) {
+    public Identity emitir(String nombre, String... dnsNames) {
         try {
             KeyPair claves = crearClaves();
             X509Certificate certificado = firmar(new X500Name("O=DFSha,CN=" + nombre), claves, dnsNames, false);

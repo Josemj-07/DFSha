@@ -1,0 +1,154 @@
+name: dfsha
+
+x-node: &node
+  build:
+    context: .
+    dockerfile: nodes/Dockerfile
+  image: dfsha/node:dev
+  restart: unless-stopped
+  depends_on:
+    rabbitmq:
+      condition: service_healthy
+
+services:
+  pki:
+    image: alpine:3.22
+    command: ["sh", "-c", "apk add --no-cache openssl >/dev/null && sh /repo/server/pki/gen-dev-pki.sh"]
+    environment:
+      RABBIT_MDS_PASS: ${RABBIT_MDS_PASS}
+      RABBIT_DN1_PASS: ${RABBIT_DN1_PASS}
+      RABBIT_DN2_PASS: ${RABBIT_DN2_PASS}
+      RABBIT_DN3_PASS: ${RABBIT_DN3_PASS}
+    volumes:
+      - ./server:/repo/server:ro
+      - dev-secrets:/dev-secrets
+
+  rabbitmq:
+    image: rabbitmq:4.3-alpine
+    depends_on:
+      pki:
+        condition: service_completed_successfully
+    volumes:
+      - ./server/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - type: volume
+        source: dev-secrets
+        target: /secrets
+        read_only: true
+        volume:
+          subpath: rabbitmq
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: dfsha/server:dev
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DFS_TLS_DIR: /tls
+      DFS_DATA_DIR: /data
+      DFS_RABBIT_HOST: rabbitmq
+      DFS_RABBIT_PASS: ${RABBIT_MDS_PASS}
+      DFS_ADMIN_PASSWORD: ${DFS_ADMIN_PASSWORD}
+    volumes:
+      - type: volume
+        source: dev-secrets
+        target: /tls
+        read_only: true
+        volume:
+          subpath: server
+      - server-data:/data
+    ports:
+      - "8443:8443"
+
+  dn-1:
+    <<: *node
+    environment:
+      DFS_NODE_ID: dn-1
+      DFS_NODE_AZ: az-a
+      DFS_ADVERTISED_HOST: dn-1
+      DFS_TLS_DIR: /tls
+      DFS_DATA_DIR: /data
+      DFS_RABBIT_HOST: rabbitmq
+      DFS_RABBIT_PASS: ${RABBIT_DN1_PASS}
+    volumes:
+      - type: volume
+        source: dev-secrets
+        target: /tls
+        read_only: true
+        volume:
+          subpath: dn-1
+      - dn1-data:/data
+
+  dn-2:
+    <<: *node
+    environment:
+      DFS_NODE_ID: dn-2
+      DFS_NODE_AZ: az-b
+      DFS_ADVERTISED_HOST: dn-2
+      DFS_TLS_DIR: /tls
+      DFS_DATA_DIR: /data
+      DFS_RABBIT_HOST: rabbitmq
+      DFS_RABBIT_PASS: ${RABBIT_DN2_PASS}
+    volumes:
+      - type: volume
+        source: dev-secrets
+        target: /tls
+        read_only: true
+        volume:
+          subpath: dn-2
+      - dn2-data:/data
+
+  dn-3:
+    <<: *node
+    environment:
+      DFS_NODE_ID: dn-3
+      DFS_NODE_AZ: az-c
+      DFS_ADVERTISED_HOST: dn-3
+      DFS_TLS_DIR: /tls
+      DFS_DATA_DIR: /data
+      DFS_RABBIT_HOST: rabbitmq
+      DFS_RABBIT_PASS: ${RABBIT_DN3_PASS}
+    volumes:
+      - type: volume
+        source: dev-secrets
+        target: /tls
+        read_only: true
+        volume:
+          subpath: dn-3
+      - dn3-data:/data
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    image: dfsha/client:dev
+    profiles: ["cli"]
+    environment:
+      DFS_SERVER_URL: https://server:8443
+      DFS_CA_CERT: /tls/ca.crt
+    volumes:
+      - type: volume
+        source: dev-secrets
+        target: /tls
+        read_only: true
+        volume:
+          subpath: client
+      - client-home:/home/dfs
+
+volumes:
+  dev-secrets:
+  rabbitmq-data:
+  server-data:
+  dn1-data:
+  dn2-data:
+  dn3-data:
+  client-home:
