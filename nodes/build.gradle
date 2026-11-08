@@ -1,0 +1,67 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.1.2'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id 'com.google.protobuf' version '0.10.1'
+}
+
+group = 'co.edu.upb.dfsha'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+ext {
+	grpcVersion = '1.85.1'
+	protobufVersion = '4.36.2'
+}
+
+// El contrato gRPC vive en la raíz del repositorio y lo comparten cliente y nodos.
+sourceSets {
+	main {
+		proto {
+			srcDir '../proto'
+		}
+	}
+}
+
+protobuf {
+	protoc { artifact = "com.google.protobuf:protoc:${protobufVersion}" }
+	plugins { grpc { artifact = "io.grpc:protoc-gen-grpc-java:${grpcVersion}" } }
+	generateProtoTasks { all()*.plugins { grpc {} } }
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-amqp'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	// Sin este starter el nodo falla al arrancar: en Spring Boot 4 el de AMQP no trae Jackson.
+	implementation 'org.springframework.boot:spring-boot-starter-jackson'
+
+	implementation platform("io.grpc:grpc-bom:${grpcVersion}")
+	implementation 'io.grpc:grpc-netty-shaded'
+	implementation 'io.grpc:grpc-protobuf'
+	implementation 'io.grpc:grpc-stub'
+	implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+	compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
+
+	implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-amqp-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
+	testImplementation 'io.grpc:grpc-inprocess'
+	testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.86'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}

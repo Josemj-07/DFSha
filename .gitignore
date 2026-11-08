@@ -6,3 +6,4 @@
 *.csr
 *.srl
 pki-out/
+bin/
