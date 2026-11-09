@@ -1,6 +1,6 @@
 # Nodos esclavos (DataNodes)
 
-Documento de construcción de los DataNodes, para personas y agentes de IA. Lee primero el [README raíz](../README.md): ahí están los contratos, los cambios frente al PDF y las [reglas de construcción](../README.md#13-reglas-de-construcción). El `build.gradle`, la configuración, el arranque TLS y el Dockerfile de este documento fueron validados: úsalos tal cual.
+Documento de construcción de los DataNodes, para personas y agentes de IA. Lee primero la [especificación](../docs/especificacion.md): ahí están los contratos, los cambios frente al PDF y las [reglas de construcción](../docs/especificacion.md#13-reglas-de-construcción). El `build.gradle`, la configuración, el arranque TLS y el Dockerfile de este documento fueron validados: úsalos tal cual.
 
 ## 1. Qué te corresponde
 

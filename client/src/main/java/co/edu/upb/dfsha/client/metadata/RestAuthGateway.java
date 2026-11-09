@@ -2,7 +2,7 @@ package co.edu.upb.dfsha.client.metadata;
 
 import java.util.Map;
 
-/** Sesión por REST. Estas rutas no llevan token de acceso. */
+/** Sesión por REST. Login y refresh no llevan token; logout recibe el vigente de quien lo llama. */
 public final class RestAuthGateway implements AuthGateway {
 
     private final RestInvoker rest;
@@ -24,8 +24,8 @@ public final class RestAuthGateway implements AuthGateway {
     }
 
     @Override
-    public void cerrarSesion(String refreshToken) {
+    public void cerrarSesion(String accessToken, String refreshToken) {
         var body = Map.of("refreshToken", refreshToken);
-        rest.ejecutarSinRespuesta(RestRequest.enviar("/auth/logout", body).sinAutenticar());
+        rest.ejecutarSinRespuesta(RestRequest.enviar("/auth/logout", body).sinAutenticar(), accessToken);
     }
 }

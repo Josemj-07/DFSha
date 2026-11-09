@@ -1,6 +1,6 @@
 # Cliente DFSha
 
-Documento de construcción del SDK y la CLI `dfs`, para personas y agentes de IA. Lee primero el [README raíz](../README.md): ahí están los contratos, los cambios frente al PDF y las [reglas de construcción](../README.md#13-reglas-de-construcción).
+Documento de construcción del SDK y la CLI `dfs`, para personas y agentes de IA. Lee primero la [especificación](../docs/especificacion.md): ahí están los contratos, los cambios frente al PDF y las [reglas de construcción](../docs/especificacion.md#13-reglas-de-construcción).
 
 **Estado:** el cliente está implementado y probado contra un simulador. Todavía no se ha probado contra el servidor y los nodos reales, porque no existen. Para desplegarlo, sigue [PRODUCCION.md](PRODUCCION.md).
 
@@ -351,7 +351,7 @@ public final class FileHash {
 }
 ```
 
-`FileHash` se calcula sobre los **32 bytes crudos** de cada hash, no sobre su texto hexadecimal, y debe coincidir exactamente con el del servidor. El vector de prueba está en el [README raíz](../README.md#44-tokens-y-recibos). `crc32c` en el proto es `fixed32`: usa `(int) crc.getValue()`.
+`FileHash` se calcula sobre los **32 bytes crudos** de cada hash, no sobre su texto hexadecimal, y debe coincidir exactamente con el del servidor. El vector de prueba está en la [especificación](../docs/especificacion.md#44-tokens-y-recibos). `crc32c` en el proto es `fixed32`: usa `(int) crc.getValue()`.
 
 ### `put`: `Uploader`
 

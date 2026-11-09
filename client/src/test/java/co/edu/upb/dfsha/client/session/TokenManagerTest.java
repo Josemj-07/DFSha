@@ -2,6 +2,7 @@ package co.edu.upb.dfsha.client.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import co.edu.upb.dfsha.client.metadata.AuthGateway;
 import co.edu.upb.dfsha.client.metadata.LoginResult;
@@ -11,6 +12,8 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +29,8 @@ class TokenManagerTest {
 
     private final AtomicInteger refreshes = new AtomicInteger();
     private boolean rejectRefresh;
+    private boolean rejectLogout;
+    private final List<String> logouts = new ArrayList<>();
     private SessionStore store;
     private TokenManager tokens;
 
@@ -45,7 +50,11 @@ class TokenManagerTest {
         }
 
         @Override
-        public void cerrarSesion(String refreshToken) {
+        public void cerrarSesion(String accessToken, String refreshToken) {
+            logouts.add(accessToken + "/" + refreshToken);
+            if (rejectLogout) {
+                throw new AuthException("INVALID_TOKEN", "rechazado");
+            }
         }
     };
 
@@ -80,6 +89,22 @@ class TokenManagerTest {
         rejectRefresh = true;
         var error = assertThrows(NotAuthenticatedException.class, () -> tokens.renovarTrasRechazo("acc-0"));
         assertEquals("Sesión vencida, ejecuta dfs login", error.getMessage());
+    }
+
+    @Test
+    void elLogoutUsaElRefreshRotadoSiTuvoQueRenovar() {
+        tokens.iniciarSesion("jose", new char[0]);
+        crear(Instant.ofEpochSecond(880)).cerrarSesion();
+        assertEquals(List.of("acc-1/ref-1"), logouts);
+        assertTrue(store.cargar().isEmpty());
+    }
+
+    @Test
+    void elLogoutBorraLaSesionLocalAunqueElServidorLoRechace() {
+        tokens.iniciarSesion("jose", new char[0]);
+        rejectLogout = true;
+        assertThrows(AuthException.class, tokens::cerrarSesion);
+        assertTrue(store.cargar().isEmpty());
     }
 
     @Test

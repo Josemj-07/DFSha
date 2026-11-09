@@ -48,12 +48,21 @@ public final class RestInvoker {
         retries.ejecutar(() -> enviarConRenovacion(request), request.idempotent());
     }
 
+    /** Envía con un token dado, sin renovarlo: para quien ya administra la sesión. */
+    public void ejecutarSinRespuesta(RestRequest request, String token) {
+        retries.ejecutar(() -> leerCuerpo(enviar(request, token)), request.idempotent());
+    }
+
     private String enviarConRenovacion(RestRequest request) {
         String token = request.authenticated() ? tokens.obtenerToken() : null;
         HttpResponse<String> response = enviar(request, token);
         if (response.statusCode() == 401 && request.authenticated()) {
             response = enviar(request, tokens.renovarTrasRechazo(token));
         }
+        return leerCuerpo(response);
+    }
+
+    private String leerCuerpo(HttpResponse<String> response) {
         if (response.statusCode() >= 300) {
             throw problems.mapear(response.statusCode(), response.body());
         }

@@ -7,5 +7,6 @@ public interface AuthGateway {
 
     LoginResult renovarSesion(String refreshToken);
 
-    void cerrarSesion(String refreshToken);
+    /** El servidor exige el token de acceso: solo el dueño de la sesión puede revocar su refresh token. */
+    void cerrarSesion(String accessToken, String refreshToken);
 }

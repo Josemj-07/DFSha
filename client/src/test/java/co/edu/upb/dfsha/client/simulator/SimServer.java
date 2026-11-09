@@ -112,8 +112,7 @@ public final class SimServer implements AutoCloseable {
             return renovar(body);
         }
         if (path.equals("/auth/logout")) {
-            refreshTokens.remove((String) body.get("refreshToken"));
-            return null;
+            return cerrarSesion(exchange, body);
         }
         String user = autenticar(exchange);
         if (path.startsWith("/files") || path.startsWith("/locks")) {
@@ -230,6 +229,17 @@ public final class SimServer implements AutoCloseable {
             throw new Problem(401, "INVALID_TOKEN", "refresh");
         }
         return emitirTokens(username);
+    }
+
+    /** Como el servidor real: exige el JWT y que el refresh token sea de ese usuario. */
+    private Object cerrarSesion(HttpExchange exchange, Map<String, Object> body) {
+        String user = autenticar(exchange);
+        String refresh = (String) body.get("refreshToken");
+        if (!user.equals(refreshTokens.get(refresh))) {
+            throw new Problem(401, "INVALID_TOKEN", "refresh");
+        }
+        refreshTokens.remove(refresh);
+        return null;
     }
 
     private Map<String, Object> emitirTokens(String username) {

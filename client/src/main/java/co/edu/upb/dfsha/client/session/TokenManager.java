@@ -36,8 +36,16 @@ public final class TokenManager implements TokenSource {
     }
 
     public void cerrarSesion() {
-        store.cargar().ifPresent(session -> auth.cerrarSesion(session.refreshToken()));
-        store.borrar();
+        try {
+            if (store.cargar().isPresent()) {
+                // Primero el token: si se renueva, el refresh token rota y hay que leerlo después.
+                String access = obtenerToken();
+                auth.cerrarSesion(access, obtenerSesion().refreshToken());
+            }
+        } finally {
+            // Aunque el servidor no responda, la sesión local no debe sobrevivir a un logout.
+            store.borrar();
+        }
     }
 
     public Session obtenerSesion() {
