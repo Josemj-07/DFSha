@@ -7,3 +7,4 @@
 *.srl
 pki-out/
 bin/
+.vscode
