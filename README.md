@@ -4,6 +4,8 @@ Sistema de archivos distribuido, proyecto académico de la UPB. Los archivos se 
 
 El sistema sigue funcionando si cae un DataNode: lee de la otra réplica y, a los 2 minutos, el servidor vuelve a replicar los bloques que quedaron con una sola copia. El servidor de metadatos es un punto único de falla: si cae, no hay operaciones hasta que reinicie. Al reiniciar, recupera su estado del WAL y de los snapshots, y los bloques nunca se pierden.
 
+Explicacion tecnica (presentacion en formato de video): https://youtu.be/qYWh5jugSq0?si=toCNMSYi0GyKUES8
+
 | Componente | Tecnología | Comunicación |
 |---|---|---|
 | Cliente: SDK y CLI `dfs` | Java 21 | HTTPS hacia el servidor, gRPC hacia los nodos |
